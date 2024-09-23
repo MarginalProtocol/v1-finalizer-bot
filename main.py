@@ -23,6 +23,7 @@ supplier = Contract(os.environ["CONTRACT_ADDRESS_MARGV1LB_SUPPLIER"])
 pool = Contract(os.environ["CONTRACT_ADDRESS_MARGV1LB_POOL"])
 # @dev assumes is of type MarginalV1LBLiquidityReceiver.sol
 receiver = Contract(supplier.receivers(pool.address))
+margv1_factory = Contract(os.environ["CONTRACT_ADDRESS_MARGV1_FACTORY"])
 
 # Whether to execute transaction through private mempool
 TXN_PRIVATE = os.environ.get("TXN_PRIVATE", "False") == "True"
@@ -59,6 +60,10 @@ def worker_startup(state: TaskiqState):
     state.timestamp_initialize = pool.blockTimestampInitialize()
     state.sqrt_price_initialize_x96 = pool.sqrtPriceInitializeX96()
     state.sqrt_price_finalize_x96 = pool.sqrtPriceFinalizeX96()
+
+    state.observation_cardinality_minimum = (
+        margv1_factory.observationCardinalityMinimum()
+    )
 
     # TODO: state.db = MyDB() if allow for tracking many pools
     return {"message": "Worker started."}
@@ -113,6 +118,42 @@ def exec_pool_swap(log: ContractLog, context: Annotated[Context, TaskiqDepends()
         "sqrt_price_x96": log.sqrtPriceX96,
         "sqrt_price_initialize_x96": context.state.sqrt_price_initialize_x96,
         "sqrt_price_finalize_x96": context.state.sqrt_price_finalize_x96,
+    }
+
+
+# This is how we trigger off of events
+# Set new_block_timeout to adjust the expected block time.
+@app.on_(receiver.MintUniswapV3)
+def exec_receiver_mint_univ3(
+    log: ContractLog, context: Annotated[Context, TaskiqDepends()]
+):
+    click.echo(f"Mint uniswap v3 occurred with event: {log}")
+    # initialize the oracle if needed
+    univ3_pool = Contract(log.uniswapV3Pool)
+    slot0 = univ3_pool.slot0()
+
+    if slot0.observationCardinalityNext < context.state.observation_cardinality_minimum:
+        # preview before sending in case of revert
+        try:
+            click.echo("Submitting oracle increase observation cardinality ...")
+            univ3_pool.increaseObservationCardinalityNext(
+                context.state.observation_cardinality_minimum,
+                sender=app.signer,
+                required_confirmations=TXN_REQUIRED_CONFIRMATIONS,
+                private=TXN_PRIVATE,
+            )
+        except TransactionError as err:
+            # didn't increase observation cardinality on oracle
+            click.secho(
+                f"Transaction error on oracle increase observation cardinality: {err}",
+                blink=True,
+                bold=True,
+            )
+
+    return {
+        "univ3_pool": log.uniswapV3Pool,
+        "token_id": log.tokenId,
+        "liquidity": log.liquidity,
     }
 
 
