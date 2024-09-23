@@ -23,7 +23,8 @@ ape plugins install .
 ## Usage
 
 Include the environment variables for the address of the [`MarginalV1LBSupplier`](https://github.com/MarginalProtocol/v1-lbp/blob/main/contracts/MarginalV1LBSupplier.sol),
-the address of the [`MarginalV1Factory`](https://github.com/MarginalProtocol/v1-core/blob/main/contracts/MarginalV1Factory.sol), and the address of the [`MarginalV1Pool`](https://github.com/MarginalProtocol/v1-lbp/blob/main/contracts/MarginalV1LBPool.sol) you wish to watch
+the address of the [`MarginalV1Factory`](https://github.com/MarginalProtocol/v1-core/blob/main/contracts/MarginalV1Factory.sol),
+and the address of the [`MarginalV1LBPool`](https://github.com/MarginalProtocol/v1-lbp/blob/main/contracts/MarginalV1LBPool.sol) you wish to watch
 
 ```sh
 export CONTRACT_ADDRESS_MARGV1LB_SUPPLIER=<address of marginal v1lb supplier contract on network>
