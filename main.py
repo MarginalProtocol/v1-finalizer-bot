@@ -2,7 +2,8 @@ import click
 import os
 from typing import Annotated  # NOTE: Only Python 3.9+
 
-from ape import Contract
+from ape import chain, Contract
+from ape.api import BlockAPI
 from ape.exceptions import TransactionError
 from ape.types import ContractLog
 
@@ -34,6 +35,9 @@ TXN_REQUIRED_CONFIRMATIONS = os.environ.get("TXN_REQUIRED_CONFIRMATIONS", 1)
 # Whether to ask to enable autosign for local account
 PROMPT_AUTOSIGN = app.signer and not isinstance(app.signer, KmsAccount)
 
+# Marginal v1 TWAP averaging length
+SECONDS_AGO = 43200  # 12 h
+
 
 @app.on_startup()
 def app_startup(startup_state: AppState):
@@ -51,6 +55,7 @@ def app_startup(startup_state: AppState):
 @app.on_worker_startup()
 def worker_startup(state: TaskiqState):
     state.block_count = 0
+    state.timestamp_mint_margv1 = 0
     state.signer_balance = app.signer.balance
 
     state.token0 = pool.token0()
@@ -132,6 +137,7 @@ def exec_receiver_mint_univ3(
     univ3_pool = Contract(log.uniswapV3Pool)
     slot0 = univ3_pool.slot0()
 
+    timestamp_mint_margv1 = log.timestamp  # mint when oracle ready
     if slot0.observationCardinalityNext < context.state.observation_cardinality_minimum:
         # preview before sending in case of revert
         try:
@@ -142,6 +148,7 @@ def exec_receiver_mint_univ3(
                 required_confirmations=TXN_REQUIRED_CONFIRMATIONS,
                 private=TXN_PRIVATE,
             )
+            timestamp_mint_margv1 += SECONDS_AGO
         except TransactionError as err:
             # didn't increase observation cardinality on oracle
             click.secho(
@@ -149,11 +156,47 @@ def exec_receiver_mint_univ3(
                 blink=True,
                 bold=True,
             )
+            timestamp_mint_margv1 = 0
 
+    click.echo(
+        f"Mint Marginal v1 liquidity at block timestamp: {timestamp_mint_margv1}"
+    )
+    context.state.timestamp_mint_margv1 = timestamp_mint_margv1
     return {
         "univ3_pool": log.uniswapV3Pool,
         "token_id": log.tokenId,
         "liquidity": log.liquidity,
+    }
+
+
+# This is how we trigger off of new blocks
+@app.on_(chain.blocks)
+# context must be a type annotated kwarg to be provided to the task
+def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
+    can = context.state.timestamp_mint_margv1 > 0
+    if can and block.timestamp >= context.state.timestamp_mint_margv1:
+        # preview before sending in case of revert
+        try:
+            click.echo("Submitting mint marginal v1 liquidity ...")
+            receiver.mintMarginalV1(
+                sender=app.signer,
+                required_confirmations=TXN_REQUIRED_CONFIRMATIONS,
+                private=TXN_PRIVATE,
+            )
+            context.state.timestamp_mint_margv1 = 0
+        except TransactionError as err:
+            # didn't mint marginal v1 liquidity
+            click.secho(
+                f"Transaction error on mint marginal v1 liquidity: {err}",
+                blink=True,
+                bold=True,
+            )
+
+    context.state.block_count += 1
+    context.state.signer_balance = app.signer.balance
+    return {
+        "block_count": context.state.block_count,
+        "signer_balance": context.state.signer_balance,
     }
 
 
