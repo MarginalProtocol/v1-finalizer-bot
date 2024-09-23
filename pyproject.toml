@@ -12,4 +12,5 @@ dependencies = [
 [tool.uv]
 dev-dependencies = [
     "black>=24.8.0",
+    "flake8>=7.1.1",
 ]
