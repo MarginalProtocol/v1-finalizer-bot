@@ -1,0 +1,10 @@
+[project]
+name = "v1-finalizer-bot"
+version = "0.1.0"
+description = "Finalizer bot for Marginal v1 liquidity bootstrapping pools"
+readme = "README.md"
+requires-python = ">=3.10,<4"
+dependencies = [
+    "eth-ape==0.8.15",
+    "silverback==0.5.8",
+]
