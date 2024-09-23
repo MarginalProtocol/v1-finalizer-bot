@@ -8,3 +8,8 @@ dependencies = [
     "eth-ape==0.8.15",
     "silverback==0.5.8",
 ]
+
+[tool.uv]
+dev-dependencies = [
+    "black>=24.8.0",
+]
